@@ -123,7 +123,7 @@ scraper <- function() {
   ExportarArchivo <- remDr$findElement(using = 'xpath', '//button[@class="btn btn-primary"]')
   ExportarArchivo$clickElement()
   
-  Sys.sleep(60)
+  Sys.sleep(80)
   
   downloads_folder <- download_directory
   destination_folder <- move_directory
@@ -187,10 +187,435 @@ scraper <- function() {
   
   remDr$close()
   
-  Sys.sleep(0)
+  Sys.sleep(5)
   
 }
 
+#' Function to update model
+#'
+#' @param x just run the function
+#' @return csv and excel file with model
+#' @export
+modelupdate <- function() {
+  library(readxl)
+  library(openxlsx)
+  library(dplyr)
+  
+  get_desktop_path <- function() {
+    if (Sys.info()['sysname'] == 'Windows') {
+      command <- 'cmd.exe /c echo %USERPROFILE%\\Documents'
+      desktop_path <- shell(command, intern = TRUE)
+      # Remove any trailing whitespace or newline characters
+      desktop_path <- gsub("[\r\n]", "", desktop_path)
+      
+      if (file.exists(desktop_path)) {
+        return(desktop_path)
+      } else {
+        # If Documents folder doesn't exist, try "Documentos" for Spanish systems
+        command_spanish <- 'cmd.exe /c echo %USERPROFILE%\\Documentos'
+        desktop_path_spanish <- shell(command_spanish, intern = TRUE)
+        desktop_path_spanish <- gsub("[\r\n]", "", desktop_path_spanish)
+        
+        if (file.exists(desktop_path_spanish)) {
+          return(desktop_path_spanish)
+        } else {
+          return(NULL)  # Neither Documents nor Documentos folder found
+        }
+      }
+    } else {
+      return(NULL)  # For non-Windows systems
+    }
+  }
+  
+  # Get the modified desktop path
+  Documents_path <- get_desktop_path()
+  
+  # Carga base de datos del excel descargado de Vortem
+  excel_file_basededatos <- paste0(Documents_path,"\\Integration\\DATA\\MODELO\\BaseDeDatosModelo.xlsx")
+  wb <- loadWorkbook(excel_file_basededatos)
+  sheet_basededatos <- 1
+  col_types <- c("text", "text", "date", 
+                 "text", "numeric", "date", "date", 
+                 "numeric", "numeric", "numeric", 
+                 "numeric", "text", "text", "numeric", 
+                 "text", "text", "date", "numeric", 
+                 "numeric", "date", "text", "text", 
+                 "text", "text", "date", "numeric", 
+                 "numeric", "text")
+  
+  #BASE DE DATOS MODELO
+  
+  
+  base_datos1 <- read_excel(excel_file_basededatos, sheet = "Sheet1", col_types = col_types)
+  base_datos <- base_datos1[,c(1,2,3,4,5,6,7,8,9,10,11,12,22)]
+  
+  
+  columns_to_find <- c("Fecha de Desembolso", "Numero de Contrato", "Solicitud/Numero Nómina", "Cliente",
+                       "Empresa donde Labora", "Periodicidad", "Pago Periodico", "Primera Amortización",
+                       "Numero de Periodos", "Monto Desembolsado", "Suma Vencimientos", "State", "Fecha Final")
+  
+  column_numbers <- numeric(length(columns_to_find))
+  
+  for (i in seq_along(columns_to_find)) {
+    column_numbers[i] <- which(names(base_datos1) == columns_to_find[i])
+  }
+  
+  base_datos_PAGOSV3 <- base_datos1[,column_numbers]
+  
+  columns_to_find <- c("Numero de Contrato","Cliente", "Financiamiento","Producto", "Periodicidad","Numero de Periodos", "Empresa donde Labora", "Promotor", "Tipo de Interés", "Fecha de Desembolso","Fecha de Operacion del Préstamo","Monto Desembolsado", "Suma Vencimientos","Pago Periodico","Primera Amortización", "Solicitud/Numero Nómina","Solicitud/Fecha de Ingreso","Solicitud/Sueldo Mensual","Solicitud/Sueldo Mensual (periodo)","Solicitud/Total de Gastos","Solicitud/Total de Ingresos","Solicitud/Puesto que desempeña")
+  
+  
+  column_numbers <- numeric(length(columns_to_find))
+  
+  for (i in seq_along(columns_to_find)) {
+    column_numbers[i] <- which(names(base_datos1) == columns_to_find[i])
+  }
+  
+  base_datos_COLOCACION <- base_datos1[,column_numbers]
+  
+  base_datosvar4 <- base_datos1[,c(1,14,12)]
+  base_datosvar4 <- base_datosvar4 %>%
+    rename(
+      `Numero.de.Contrato` = `Numero de Contrato`,
+      `Saldo.para.Liquidar` = `Saldo para Liquidar`,
+      `State` = `State`
+    )
+  
+  
+  # Carga BajasEmpleados de archivo Proporcionado por Rolando
+  excel_file_bajas <- paste0(Documents_path,"\\Integration\\DATA\\MODELO\\BajasEmpleados.xlsx")
+  wb2 <- loadWorkbook(excel_file_bajas)
+  sheet_bajas <- 3
+  base_bajas <- read.xlsx(excel_file_bajas, sheet = sheet_bajas, rows = 17:200000, cols = 1:30)
+  
+  
+  #...........................................................................................
+  
+  #lastdata_modificable <- tail(base_modificable$Numero_de_Contrato, n=1)
+  #data_tointegrate <- which(base_datos$`Numero de Contrato` == lastdata_modificable)[1] + 1 
+  base_datos2 <- base_datos#[data_tointegrate:nrow(base_datos),]
+  columnames <- c("Numero_de_Contrato", "Periodicidad", "Fecha_de_nacimiento", "Sexo", "Pago_Periodico", "Fecha_de_Ingreso", "Fecha_de_Desembolso", "Total_de_Gastos", "Total_de_Ingresos", "Financiamiento", "Numero_de_Periodos", "State", "Empresa_Pagadora")   
+  
+  names(base_datos2) <- columnames
+  existing_lengths <- sapply(base_datos2, length)
+  
+  
+  # Create new columns filled with NA initially
+  Edad <- rep(NA, existing_lengths[1])  # Creating NA-filled column with the length of column 'A'
+  Antiguedad <- rep(NA, existing_lengths[1])  # Creating NA-filled column with the length of column 'A'
+  Impago <- rep(NA, existing_lengths[1]) 
+  PeriodicidadDos <- rep(NA, existing_lengths[1]) 
+  DTI <- rep(NA, existing_lengths[1]) 
+  
+  # Add new columns between 'A' and 'B'
+  base_datos_modified <- cbind(base_datos2[, 1:2], Edad, base_datos2[, 3:5], Antiguedad, base_datos2[, 6:length(base_datos2)], Impago, PeriodicidadDos, DTI)
+  
+  
+  index <- which(is.na(base_datos_modified$Fecha_de_nacimiento) | is.na(base_datos_modified$Fecha_de_Ingreso))
+  index <- which(is.na(base_datos_modified$Fecha_de_Ingreso))
+  #base_datos_modified[index, 1]
+  
+  
+  
+  #.................................................................#.................................................................
+  
+  
+  #DATE FORMAT
+  date_string <- base_datos_modified$Fecha_de_nacimiento
+  date_string <- gsub(" UTC", "", date_string)
+  
+  date_string2 <- base_datos_modified$Fecha_de_Ingreso
+  date_string2 <- gsub(" UTC", "", date_string2)
+  
+  date_string3 <- base_datos_modified$Fecha_de_Desembolso
+  date_string3 <- gsub(" UTC", "", date_string3)
+  
+  base_datos_modified$Fecha_de_nacimiento <- as.Date(date_string)
+  
+  base_datos_modified$Fecha_de_Ingreso <- as.Date(date_string2)
+  
+  base_datos_modified$Fecha_de_Desembolso <- as.Date(date_string3)
+  
+  # Fill new columns calculations
+  date_diff <- as.numeric(base_datos_modified$Fecha_de_Desembolso - base_datos_modified$Fecha_de_nacimiento)
+  date_diff <- date_diff / 365.25
+  
+  date_diff2 <- as.numeric(base_datos_modified$Fecha_de_Desembolso - base_datos_modified$Fecha_de_Ingreso)
+  date_diff2 <- date_diff2 / 365.25
+  
+  base_datos_modified$Edad <- date_diff 
+  base_datos_modified$Antiguedad <- date_diff2
+  
+  for (i in 1:nrow(base_datos_modified)) {
+    if (base_datos_modified$Periodicidad[i] == "Semanal") {
+      base_datos_modified$PeriodicidadDos[i] <- base_datos_modified$Numero_de_Periodos[i] / 360 * 7
+    } else if (base_datos_modified$Periodicidad[i] == "Catorcenal") {
+      base_datos_modified$PeriodicidadDos[i] <- base_datos_modified$Numero_de_Periodos[i] / 360 * 14 
+    } else if (base_datos_modified$Periodicidad[i] == "Quincenal") {
+      base_datos_modified$PeriodicidadDos[i] <- base_datos_modified$Numero_de_Periodos[i] / 360 * 15
+    } else if (base_datos_modified$Periodicidad[i] == "Mensual") {
+      base_datos_modified$PeriodicidadDos[i] <- base_datos_modified$Numero_de_Periodos[i] / 360 * 30
+      
+    }
+  }
+  
+  base_datos_modified$DTI <- base_datos_modified$Total_de_Gastos/base_datos_modified$Total_de_Ingresos
+  colabuscar <- colnames(base_bajas)[2]
+  prueba <- (base_bajas[[colabuscar]])
+  naindex <- which(is.na(prueba))
+  prueba <- prueba[-naindex]
+  
+  
+  base_datos_modified$Impago <- ifelse(base_datos_modified$Numero_de_Contrato %in% prueba, 1, 0)
+  #base_modificable$Impago <- ifelse(base_modificable$Numero_de_Contrato %in% prueba, 1, 0)
+  
+  #...................................................................................................................................................
+  
+  base_datos_modificable2 <- base_datos_modified #rbind(base_modificable, base_datos_modified)
+  
+  # Filter for rows containing "Activos" or "Terminados"
+  base_datos_modificable2 <- base_datos_modificable2[base_datos_modificable2$State %in% c("Activo", "Terminado"), ]
+  
+  #If state = 1 Terminado
+  base_datos_modificable2$State <- ifelse(base_datos_modificable2$Impago == 1, "Terminado", base_datos_modificable2$State)
+  
+  #.................................................................#.................................................................
+  
+  indexna <- which(is.na(base_datosvar4$Saldo.para.Liquidar))
+  base_datosvar5 <- base_datosvar4[-indexna,]
+  base_datosvar6 <- base_datosvar5[base_datosvar5$Saldo.para.Liquidar <= 0, ]
+  contratos_menoracero <- base_datosvar6[["Numero.de.Contrato"]]
+  
+  
+  
+  # Num Saldo <= 0
+  base_datos_modificable2$State <- ifelse(base_datos_modificable2$Numero_de_Contrato %in% contratos_menoracero, "Terminado", base_datos_modificable2$State)
+  
+  
+  
+  # Identify rows where Empresa_Pagadora matches certain values and replace them
+  replace_indices <- base_datos_modificable2$Empresa_Pagadora %in% c("ALLENDE VALLE DEL NORTE SA DE CV")
+  base_datos_modificable2$Empresa_Pagadora[replace_indices] <- "Allende"
+  
+  replace_indices <- base_datos_modificable2$Empresa_Pagadora %in% c("ARFINSA SA DE CV")
+  base_datos_modificable2$Empresa_Pagadora[replace_indices] <- "Arfinsa"
+  
+  replace_indices <- base_datos_modificable2$Empresa_Pagadora %in% c("BRITE LITE DE MEXICO SA DE CV")
+  base_datos_modificable2$Empresa_Pagadora[replace_indices] <- "Britelite"
+  
+  replace_indices <- base_datos_modificable2$Empresa_Pagadora %in% c("BURO JURIDICO INTEGRAL DE COBRANZA SC")
+  base_datos_modificable2$Empresa_Pagadora[replace_indices] <- "Buro Juridico"
+  
+  replace_indices <- base_datos_modificable2$Empresa_Pagadora %in% c("PRODUCTOS DE CALIZA SA DE CV")
+  base_datos_modificable2$Empresa_Pagadora[replace_indices] <- "Caliza"
+  
+  replace_indices <- base_datos_modificable2$Empresa_Pagadora %in% c("CARMEN PATRICIA SAENZ TREVIÑO")
+  base_datos_modificable2$Empresa_Pagadora[replace_indices] <- "Carmen Patricia Saenz"
+  
+  replace_indices <- base_datos_modificable2$Empresa_Pagadora %in% c("CARNES SAN MIGUEL DE SALTILLO SA DE CV")
+  base_datos_modificable2$Empresa_Pagadora[replace_indices] <- "Carnes San Miguel"
+  
+  replace_indices <- base_datos_modificable2$Empresa_Pagadora %in% c("COMEDORES Y BANQUETES SA DE CV", "Comedores Y Banquetes")
+  base_datos_modificable2$Empresa_Pagadora[replace_indices] <- "Comedores Y Banquetes"
+  
+  replace_indices <- base_datos_modificable2$Empresa_Pagadora %in% c("DENSO MEXICO SA DE CV")
+  base_datos_modificable2$Empresa_Pagadora[replace_indices] <- "Denso"
+  
+  replace_indices <- base_datos_modificable2$Empresa_Pagadora %in% c("DOGA CNC MAQUINADOS SA DE CV")
+  base_datos_modificable2$Empresa_Pagadora[replace_indices] <- "Doga"
+  
+  replace_indices <- base_datos_modificable2$Empresa_Pagadora %in% c("EDER ALEJANDRO TORRES PEREZ")
+  base_datos_modificable2$Empresa_Pagadora[replace_indices] <- "Eder Alejandro Torres"
+  
+  replace_indices <- base_datos_modificable2$Empresa_Pagadora %in% c("ELOISA YAMILET PEREZ DELGADILLO")
+  base_datos_modificable2$Empresa_Pagadora[replace_indices] <- "Eloisa Yamilet"
+  
+  replace_indices <- base_datos_modificable2$Empresa_Pagadora %in% c("EDIFIKA MANTENIMIENTOS PLAZAS Y PARQUES SA DE CV")
+  base_datos_modificable2$Empresa_Pagadora[replace_indices] <- "Edifika"
+  
+  replace_indices <- base_datos_modificable2$Empresa_Pagadora %in% c("FLEXICREDIT SA DE CV")
+  base_datos_modificable2$Empresa_Pagadora[replace_indices] <- "FlexiCredit"
+  
+  replace_indices <- base_datos_modificable2$Empresa_Pagadora %in% c("GRANIX SA DE CV")
+  base_datos_modificable2$Empresa_Pagadora[replace_indices] <- "Granix"
+  
+  replace_indices <- base_datos_modificable2$Empresa_Pagadora %in% c("INTERCONSTRUCTORA SA DE CV")
+  base_datos_modificable2$Empresa_Pagadora[replace_indices] <- "Interconstructora"
+  
+  replace_indices <- base_datos_modificable2$Empresa_Pagadora %in% c("LADRILLERA MECANIZADA, SA DE CV")
+  base_datos_modificable2$Empresa_Pagadora[replace_indices] <- "Ladrillera"
+  
+  replace_indices <- base_datos_modificable2$Empresa_Pagadora %in% c("PRODUCTOS LA TRADICIONAL SA DE CV")
+  base_datos_modificable2$Empresa_Pagadora[replace_indices] <- "La Tradicional"
+  
+  replace_indices <- base_datos_modificable2$Empresa_Pagadora %in% c("MAQUINARIA Y FLETES SA DE CV")
+  base_datos_modificable2$Empresa_Pagadora[replace_indices] <- "Maquinaria Y Fletes"
+  
+  replace_indices <- base_datos_modificable2$Empresa_Pagadora %in% c("MARIA DE LA LUZ FIERROS GALLEGOS")
+  base_datos_modificable2$Empresa_Pagadora[replace_indices] <- "Maria De La Luz Fierros"
+  
+  replace_indices <- base_datos_modificable2$Empresa_Pagadora %in% c("MAURICIO ORDOÑEZ GARZA")
+  base_datos_modificable2$Empresa_Pagadora[replace_indices] <- "Mauricio Ordonez"
+  
+  replace_indices <- base_datos_modificable2$Empresa_Pagadora %in% c("MAXIWELD SA DE CV")
+  base_datos_modificable2$Empresa_Pagadora[replace_indices] <- "Maxiweld"
+  
+  replace_indices <- base_datos_modificable2$Empresa_Pagadora %in% c("MIGUEL DANIEL CHAVARRIA ALVAREZ")
+  base_datos_modificable2$Empresa_Pagadora[replace_indices] <- "Miguel Daniel Chavarria"
+  
+  replace_indices <- base_datos_modificable2$Empresa_Pagadora %in% c("MONDELEZ MEXICO, SA DE RL DE CV")
+  base_datos_modificable2$Empresa_Pagadora[replace_indices] <- "Mondelez"
+  
+  replace_indices <- base_datos_modificable2$Empresa_Pagadora %in% c("MUEBLES KRILL SA DE CV")
+  base_datos_modificable2$Empresa_Pagadora[replace_indices] <- "Muebles Krill"
+  
+  replace_indices <- base_datos_modificable2$Empresa_Pagadora %in% c("NATIONAL UNITY SA DE CV")
+  base_datos_modificable2$Empresa_Pagadora[replace_indices] <- "National Unity"
+  
+  replace_indices <- base_datos_modificable2$Empresa_Pagadora %in% c("PLANTASFALTOS SA DE CV")
+  base_datos_modificable2$Empresa_Pagadora[replace_indices] <- "Plantasfaltos"
+  
+  replace_indices <- base_datos_modificable2$Empresa_Pagadora %in% c("CORPORACION TATSUMI DE MEXICO SA DE CV")
+  base_datos_modificable2$Empresa_Pagadora[replace_indices] <- "Tatsumi"
+  
+  replace_indices <- base_datos_modificable2$Empresa_Pagadora %in% c("LOGISTICA Y SOLUCIONES ROAN SC")
+  base_datos_modificable2$Empresa_Pagadora[replace_indices] <- "Roan"
+  
+  replace_indices <- base_datos_modificable2$Empresa_Pagadora %in% c("SERVICIO INTEGRAL DE SEGURIDAD PRIVADA MG SA DE CV")
+  base_datos_modificable2$Empresa_Pagadora[replace_indices] <- "Seguridad MG"
+  
+  replace_indices <- base_datos_modificable2$Empresa_Pagadora %in% c("SEGURIDAD PRIVADA INTEGRAL PISCIS SA DE CV")
+  base_datos_modificable2$Empresa_Pagadora[replace_indices] <- "Seguridad Piscis"
+  
+  replace_indices <- base_datos_modificable2$Empresa_Pagadora %in% c("SCORE EVENTOS SA DE CV")
+  base_datos_modificable2$Empresa_Pagadora[replace_indices] <- "Score"
+  
+  replace_indices <- base_datos_modificable2$Empresa_Pagadora %in% c("TALENTO EJECUTIVO SA DE CV")
+  base_datos_modificable2$Empresa_Pagadora[replace_indices] <- "Talento Ejecutivo"
+  
+  replace_indices <- base_datos_modificable2$Empresa_Pagadora %in% c("COMERCIALIZADORA TRENT SA DE CV")
+  base_datos_modificable2$Empresa_Pagadora[replace_indices] <- "Trent"
+  
+  #sort(unique(base_datos_modificable2$Empresa_Pagadora))
+  
+  
+  base_datos_modificable_modelo <- base_datos_modificable2[base_datos_modificable2$State %in% "Terminado", ]
+  #sort(unique(base_datos_modificable_modelo$Empresa_Pagadora))
+  
+  replace_indices <- base_datos_modificable_modelo$Empresa_Pagadora %in% c("Arfinsa", "Britelite", "National Unity", "Talento Ejecutivo")
+  base_datos_modificable_modelo$Empresa_Pagadora[replace_indices] <- "Accionistas"
+  
+  replace_indices <- base_datos_modificable_modelo$Empresa_Pagadora %in% c("Caliza", "Granix", "Interconstructora", "Maquinaria y Fletes", "Plantasfaltos")
+  base_datos_modificable_modelo$Empresa_Pagadora[replace_indices] <- "MINCO"
+  
+  replace_indices <- base_datos_modificable_modelo$Empresa_Pagadora %in% c("Comedores y Banquetes", "Carnes San Miguel")
+  base_datos_modificable_modelo$Empresa_Pagadora[replace_indices] <- "Otros"
+  
+  empresasmodelo <- c("Accionistas", "Denso", "La Tradicional", "MINCO", "Muebles Krill", "Roan", "Seguridad MG", "Otros")
+  base_datos_modificable_modelo_true <- base_datos_modificable_modelo[base_datos_modificable_modelo$Empresa_Pagadora %in% empresasmodelo, ]
+  
+  library(dplyr)
+  
+  # Assuming your data frame is named base_datos_modificable_true
+  base_datos_modificable_modelo_true <- base_datos_modificable_modelo_true %>%
+    mutate(Sueldo_Neto = Total_de_Ingresos - Total_de_Gastos) %>%
+    select(Numero_de_Contrato:Total_de_Ingresos, Sueldo_Neto, Financiamiento:PeriodicidadDos) %>%
+    mutate(DTI = Total_de_Gastos / Total_de_Ingresos) %>%
+    select(Numero_de_Contrato:PeriodicidadDos, DTI)
+  
+  base_datos_modificable_modelo_true <- base_datos_modificable_modelo_true[-which(is.na(base_datos_modificable_modelo_true$Financiamiento)),]
+  base_datos_modificable_modelo_true <- base_datos_modificable_modelo_true[-which(is.na(base_datos_modificable_modelo_true$Fecha_de_Ingreso)),]
+  base_datos_modificable_modelo_true
+  
+  # Assuming your calculated data is stored in a data frame named 'base_datos_modificable_modelo_true'
+  library(writexl)
+  pathmodelo <- paste0("FlexiCredit - Datos Modelo ", Sys.Date())
+  
+  
+  matching_files2 <- list.files(path = dirname(paste0(Documents_path, "\\Integration\\SHINY\\CALCULODEPROBABILIDAD\\FlexiCredit - Datos Modelo ")), pattern = basename("FlexiCredit - Datos Modelo "))
+  
+  file_path <- paste0(Documents_path, "\\Integration\\DATA\\MODELO\\MODELOFINAL\\", pathmodelo  ,".xlsx")
+  file_path2 <- paste0(Documents_path, "\\Integration\\DATA\\MODELO\\MODELOFINAL\\", pathmodelo  ,".csv")
+  file_path3 <- paste0(Documents_path, "\\Integration\\SHINY\\CALCULODEPROBABILIDAD\\", matching_files2 )
+  file_path3_paste <- paste0(Documents_path, "\\Integration\\SHINY\\CALCULODEPROBABILIDAD\\", pathmodelo ,".csv")
+  
+  # Check if the file exists, then delete it before writing the new data
+  if(file.exists(file_path)) {
+    file.remove(file_path)
+  }
+  
+  if(file.exists(file_path2)) {
+    file.remove(file_path2)
+  }
+  
+  if(file.exists(file_path3)) {
+    file.remove(file_path3)
+  }
+  
+  # Write data to an Excel file
+  write_xlsx(base_datos_modificable_modelo_true, file_path)
+  
+  write.csv(base_datos_modificable_modelo_true, file_path2, row.names = FALSE)
+  
+  write.csv(base_datos_modificable_modelo_true, file_path3_paste, row.names = FALSE)
+  
+}
+
+
+
+#' Function to deploy latest data app for users
+#'
+#' @param x just run to deploy app 
+#' @return deploy app
+#' @export
+appdeploy <- function() {
+  get_desktop_path <- function() {
+    if (Sys.info()['sysname'] == 'Windows') {
+      command <- 'cmd.exe /c echo %USERPROFILE%\\Documents'
+      desktop_path <- shell(command, intern = TRUE)
+      # Remove any trailing whitespace or newline characters
+      desktop_path <- gsub("[\r\n]", "", desktop_path)
+      
+      if (file.exists(desktop_path)) {
+        return(desktop_path)
+      } else {
+        # If Documents folder doesn't exist, try "Documentos" for Spanish systems
+        command_spanish <- 'cmd.exe /c echo %USERPROFILE%\\Documentos'
+        desktop_path_spanish <- shell(command_spanish, intern = TRUE)
+        desktop_path_spanish <- gsub("[\r\n]", "", desktop_path_spanish)
+        
+        if (file.exists(desktop_path_spanish)) {
+          return(desktop_path_spanish)
+        } else {
+          return(NULL)  # Neither Documents nor Documentos folder found
+        }
+      }
+    } else {
+      return(NULL)  # For non-Windows systems
+    }
+  }
+  
+  # Get the modified desktop path
+  Documents_path <- get_desktop_path()
+  
+  library(rsconnect)
+  
+  # Set your account information
+  rsconnect::setAccountInfo(name='simonsantos', token='F0122207B1F310919E454B11ADC0466D', secret='b37BNRvvfhIMZCb1y4GbQJHQOx+mR9ZvRFmS78mh')
+  
+  # Function to deploy the Shiny app
+  deployShinyApp <- function(app_directory) {
+    rsconnect::deployApp(appDir = app_directory)
+  }
+  
+  # Call the function with the directory path of your Shiny app
+  deployShinyApp(paste0(Documents_path, "\\Integration\\SHINY\\CALCULODEPROBABILIDAD"))
+  
+}
+  
+  
+
+  
 #' Function to send last credits available for each business
 #'
 #' @param empresa tell which business to send latest data 
