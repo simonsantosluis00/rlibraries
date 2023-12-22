@@ -44,10 +44,9 @@ scraper <- function() {
   library(netstat)
   library(tidyverse)
   library(readxl)
-  library(dplyr)
   library(openxlsx)
   
-  #system("taskkill /im java.exe /f", intern=FALSE, ignore.stdout=FALSE)
+  system("taskkill /im java.exe /f", intern=FALSE, ignore.stdout=FALSE)
   
   # Set the download directory path
   download_directory <- download_directory
@@ -147,7 +146,44 @@ scraper <- function() {
     cat("No files to move in the Downloads folder.\n")
   }
   
-  Sys.sleep(1.5)
+  download_directory <- paste0(Documents_path, "\\Integration\\DOWNLOADS")
+  move_directory <- paste0(Documents_path, "\\Integration\\DATA\\MODELO\\PLAZOSINPAGO")
+  
+  Sys.sleep(2)
+  
+  Plantilla <- remDr$findElement(using = 'xpath', '//select[@class="form-control ml-4 o_exported_lists_select"]')
+  Plantilla$clickElement()
+  
+  Plantilla_BaseDeDatosModelov1<- remDr$findElement(using = 'xpath', '//option[@value="91"]')
+  Plantilla_BaseDeDatosModelov1$clickElement()
+  
+  Sys.sleep(1)
+  
+  ExportarArchivo <- remDr$findElement(using = 'xpath', '//button[@class="btn btn-primary"]')
+  ExportarArchivo$clickElement()
+  
+  Sys.sleep(60)
+  
+  downloads_folder <- download_directory
+  destination_folder <- move_directory
+  downloaded_files <- list.files(downloads_folder, full.names = TRUE, recursive = FALSE)
+  downloaded_files <- downloaded_files[file.info(downloaded_files)$isdir == FALSE]  # Exclude directories
+  downloaded_files <- downloaded_files[order(file.info(downloaded_files)$mtime, decreasing = TRUE)]
+  new_file_name <- "Flexicredit - MAC Ultimo Pago.xlsx"
+  
+  if (length(downloaded_files) > 0) {
+    # Get the most recent file (the first one in the sorted list)
+    most_recent_file <- downloaded_files[1]
+    
+    # Define the destination path for the most recent file
+    destination_path <- file.path(destination_folder, new_file_name)
+    
+    # Move the most recent file to the destination folder
+    file.rename(most_recent_file, destination_path)
+    cat("Moved file:", most_recent_file, "\nTo destination:", destination_path, "\n")
+  } else {
+    cat("No files to move in the Downloads folder.\n")
+  }
   
   remDr$close()
   
@@ -165,7 +201,7 @@ business <- function(empresa) {
   library(openxlsx)
   library(dplyr)
   # Pedir al usuario que ingrese un número
-  #empresa <- readline(prompt = "Ingresa un nombre de empresa: ")
+  empresa <- readline(prompt = "Ingresa un nombre de empresa: ")
   
   
   get_desktop_path <- function() {
@@ -506,16 +542,21 @@ business <- function(empresa) {
   
   
   library(RDCOMClient)
-  empresa <- "Denso"
   empresas <- c("Denso", "Mondelez", "Ladrillera", "Muebles Krill", "La Tradicional", "Tatsumi")
   empleados <- c("Karla De La Rosa", "Juan vazquez", "Ricardo Cazares", "Elizabeth Estrella", "Aurora Idolina", "Alejandra Ramirez") 
-  emails <- c("finanzas3@flexicredit.mx", ".jvazkez_9093@hotmail.com", ".rcazares@ladrillera.mx", ".eli_estrella@muebleskrill.com", ".recursosh@tostadasdelicias.com",
-              ".alejandra-rmz@tdm.mitsuba-gr.com") 
-  correos <- data.frame(empresas, empleados, emails)
-  rownames(correos) <- correos$empresas
-  correos <- correos[, -which(names(correos) == "empresas")]
+  emails <- list(c("karla.delarosa@na.denso.com"), c("jvazkez_9093@hotmail.com", "oscarop1912950@gmail.com"), c("rcazares@ladrillera.mx", "ybustos@ladrillera.mx", "acastillo@ladrillera.mx"),c("eli_estrella@muebleskrill.com", "krill.rh2@gmail.com"), c("recursosh@tostadasdelicias.com"), c("laura-martinez@tdm.mitsuba-gr.com", "alejandra-rmz@tdm.mitsuba-gr.com"))
   
-  correos <- correos[empresa,]
+  # Create a list to associate empresas, empleados, and emails
+  company_data <- list()
+  
+  # Loop through each empresa and associate empleados and emails
+  for (i in seq_along(empresas)) {
+    company <- empresas[i]
+    employee <- empleados[i]
+    email <- emails[[i]]
+    
+    company_data[[company]] <- list(Empleado = employee, Email = email)
+  }
   
   # Load the lubridate package
   library(lubridate)
@@ -580,7 +621,7 @@ business <- function(empresa) {
       <h1>Listado de Descuentos ", empresa, "</h1> <br>
       <img src='https://flexicredit.mx/wp-content/uploads/2022/06/Flexicredit-02-02.png' alt='Logo de la empresa' width='100'>
       <div class='message'>
-        <p>Buenos días ", correos$empleados, ",</p>
+        <p>Buenos días ", company_data[[empresa]]$Empleado , ",</p>
         <p>Espero te encuentres muy bien. Te compartimos el listado con los nuevos descuentos a realizar a partir de este <em><strong> ", formatted_friday ,". </strong></em>
         <br>Adjunto encontraras el archivo con el detalle de la información. Quedamos al pendiente para cualquier duda o aclaración.</p>
         <p>Saludos y excelente inicio de semana!</p>
@@ -604,7 +645,7 @@ business <- function(empresa) {
     </div>
     </body>
   </html>"
-  )
+  ) 
   
   
   # Open Outlook
@@ -614,9 +655,9 @@ business <- function(empresa) {
   Email = Outlook$CreateItem(0)
   
   # Set the recipient, subject, and body
-  Email[["to"]] = correos$emails
+  Email[["to"]] = paste(company_data[[empresa]]$Email, collapse = ";") 
   Email[["cc"]] = ""
-  Email[["bcc"]] = ""
+  Email[["bcc"]] = "dir.general@flexicredit.mx;finanzas2@flexicredit.mx"
   Email[["subject"]] = paste0("Listado de Descuentos ", empresa)
   Email[["htmlbody"]] = htmlbody
   
