@@ -62,7 +62,7 @@ scraper <- function() {
   
   eCaps 
   
-  rs_driver_object <- rsDriver( browser = "chrome", chromever = "119.0.6045.105", extraCapabilities = eCaps)
+  rs_driver_object <- rsDriver( browser = "chrome", chromever = "123.0.6312.58", extraCapabilities = eCaps)
   
   remDr <- rs_driver_object$client
   
@@ -185,6 +185,45 @@ scraper <- function() {
     cat("No files to move in the Downloads folder.\n")
   }
   
+  download_directory <- paste0(Documents_path, "\\Integration\\DOWNLOADS")
+  move_directory <- paste0(Documents_path, "\\Integration\\DATA\\API")
+  
+  Sys.sleep(2)
+  
+  Plantilla <- remDr$findElement(using = 'xpath', '//select[@class="form-control ml-4 o_exported_lists_select"]')
+  Plantilla$clickElement()
+  
+  Plantilla_BaseDeDatosModelov1<- remDr$findElement(using = 'xpath', '//option[@value="94"]')
+  Plantilla_BaseDeDatosModelov1$clickElement()
+  
+  Sys.sleep(1)
+  
+  ExportarArchivo <- remDr$findElement(using = 'xpath', '//button[@class="btn btn-primary"]')
+  ExportarArchivo$clickElement()
+  
+  Sys.sleep(20)
+  
+  downloads_folder <- download_directory
+  destination_folder <- move_directory
+  downloaded_files <- list.files(downloads_folder, full.names = TRUE, recursive = FALSE)
+  downloaded_files <- downloaded_files[file.info(downloaded_files)$isdir == FALSE]  # Exclude directories
+  downloaded_files <- downloaded_files[order(file.info(downloaded_files)$mtime, decreasing = TRUE)]
+  new_file_name <- "Flexicredit - Api.xlsx"
+  
+  if (length(downloaded_files) > 0) {
+    # Get the most recent file (the first one in the sorted list)
+    most_recent_file <- downloaded_files[1]
+    
+    # Define the destination path for the most recent file
+    destination_path <- file.path(destination_folder, new_file_name)
+    
+    # Move the most recent file to the destination folder
+    file.rename(most_recent_file, destination_path)
+    cat("Moved file:", most_recent_file, "\nTo destination:", destination_path, "\n")
+  } else {
+    cat("No files to move in the Downloads folder.\n")
+  }
+  
   remDr$close()
   
   Sys.sleep(5)
@@ -283,10 +322,10 @@ modelupdate <- function() {
   
   
   # Carga BajasEmpleados de archivo Proporcionado por Rolando
-  excel_file_bajas <- paste0(Documents_path,"\\Integration\\DATA\\MODELO\\BajasEmpleados.xlsx")
+  excel_file_bajas <- paste0(Documents_path,"\\Integration\\DATA\\MODELO\\FlexiCredit - BajasEmpleados.xlsx")
   wb2 <- loadWorkbook(excel_file_bajas)
-  sheet_bajas <- 3
-  base_bajas <- read.xlsx(excel_file_bajas, sheet = sheet_bajas, rows = 17:200000, cols = 1:30)
+  sheet_bajas <- 7
+  base_bajas <- read.xlsx(excel_file_bajas, sheet = sheet_bajas, rows = 207:200000, cols = 1:30)
   
   
   #...........................................................................................
@@ -359,11 +398,13 @@ modelupdate <- function() {
     }
   }
   
+  
   base_datos_modified$DTI <- base_datos_modified$Total_de_Gastos/base_datos_modified$Total_de_Ingresos
   colabuscar <- colnames(base_bajas)[2]
   prueba <- (base_bajas[[colabuscar]])
-  naindex <- which(is.na(prueba))
-  prueba <- prueba[-naindex]
+  prueba <- prueba[grepl("\\d", prueba)]
+  # naindex <- which(is.na(prueba))
+  # prueba <- prueba[-naindex]
   
   
   base_datos_modified$Impago <- ifelse(base_datos_modified$Numero_de_Contrato %in% prueba, 1, 0)
@@ -527,6 +568,12 @@ modelupdate <- function() {
   base_datos_modificable_modelo_true <- base_datos_modificable_modelo_true[-which(is.na(base_datos_modificable_modelo_true$Fecha_de_Ingreso)),]
   base_datos_modificable_modelo_true
   
+  which <- which(base_datos_modificable_modelo_true$Empresa_Pagadora == "La Tradicional" & base_datos_modificable_modelo_true$Antiguedad > 20)
+  
+  base_datos_modificable_modelo_true <- base_datos_modificable_modelo_true[-which,]
+  View(base_datos_modificable_modelo_true)
+  
+  
   # Assuming your calculated data is stored in a data frame named 'base_datos_modificable_modelo_true'
   library(writexl)
   pathmodelo <- paste0("FlexiCredit - Datos Modelo ", Sys.Date())
@@ -626,8 +673,6 @@ business <- function(empresa) {
   library(openxlsx)
   library(dplyr)
   # Pedir al usuario que ingrese un número
-  empresa <- readline(prompt = "Ingresa un nombre de empresa: ")
-  
   
   get_desktop_path <- function() {
     if (Sys.info()['sysname'] == 'Windows') {
@@ -710,8 +755,16 @@ business <- function(empresa) {
   
   #path <- paste0("../DATA/FINANCIEROS/",empresa,"/ENVIADOS/", matching_files)
   
-  denso_descuento <- read_excel(most_recent_file_sent, 
-                                skip = 4)
+  descuento <- read_excel(most_recent_file_sent, 
+                          skip = 4)
+  
+  if (any(is.na(descuento$`Solicitud/Numero Nómina`))) {
+    descuento <- descuento[1:(which(is.na(descuento$`Solicitud/Numero Nómina`))[[1]]-1), ]
+  } else {
+  }
+  
+  
+  
   
   # Identify rows where `Empresa donde Labora` matches certain values and replace them
   replace_indices <- base_datos_pagosV3$`Empresa donde Labora` %in% c("ALLENDE VALLE DEL NORTE SA DE CV")
@@ -816,188 +869,203 @@ business <- function(empresa) {
   replace_indices <- base_datos_pagosV3$`Empresa donde Labora` %in% c("COMERCIALIZADORA TRENT SA DE CV")
   base_datos_pagosV3$`Empresa donde Labora`[replace_indices] <- "Trent"
   
+  descuento$`Primera Amortización` <- as.Date(descuento$`Primera Amortización`)
+  
+  descuento_last <- tail(descuento, 1)
+  descuento_last <- descuento_last[,1]
+  
+  descuento_last <- as.character(descuento_last)
+  indices <- which(base_datos_pagosV3$`Solicitud/Numero Nómina` == descuento_last)
   
   
-  denso_descuento$`Fecha de Pago` <- as.Date(denso_descuento$`Fecha de Pago`)
-  
-  denso_descuento_last <- tail(denso_descuento, 1)
-  denso_descuento_last <- denso_descuento_last[,1]
-  
-  denso_descunto_last <- as.numeric(denso_descuento_last)
-  indices <- which(base_datos_pagosV3$`Solicitud/Numero Nómina` == denso_descunto_last)
   if (length(indices) > 0){
     index_max <- indices[which.max(indices)] + 1 
-    
   } else {
-    
   }
   
-  denso_descuento_last
   
-  base_datos_pagosV3 <- base_datos_pagosV3[index_max:nrow(base_datos_pagosV3),]
-  base_datos_pagosV3
+  tryCatch({
+    base_datos_pagosV3 <- base_datos_pagosV3[index_max:nrow(base_datos_pagosV3), ]
+  }, error = function(e) {
+    print(paste("An error occurred:", e))
+    base_datos_pagosV3 <- NULL  
+  })
   
   
   naindex <- which(is.na(base_datos_pagosV3$`Monto Desembolsado`))
-  base_datos_pagosV3[-naindex,]
+  base_datos_pagosV3 <- base_datos_pagosV3[-naindex,]
+  
+  #zeroindex <- which(base_datos_pagosV3$`Monto Desembolsado` == 0)
+  #base_datos_pagosV3 <- base_datos_pagosV3[-zeroindex,]
   
   base_datos_pagosV3 <- base_datos_pagosV3[(base_datos_pagosV3$`Empresa donde Labora` == empresa),]
-  base_datos_pagosV3 <-base_datos_pagosV3[1:nrow(base_datos_pagosV3),]
-  
-  length <- length(base_datos_pagosV3) - 2
-  base_datos_pagosV3 <- base_datos_pagosV3[,3:length]
-  
-  #
-  base_datos_pagosV3$`Primera Amortización` <- as.Date(base_datos_pagosV3$`Primera Amortización`)
-  
-  library(lubridate)
-  
-  # ymd
-  base_datos_pagosV3$`Primera Amortización` <- ymd(base_datos_pagosV3$`Primera Amortización`)
-  
-  #
-  base_datos_pagosV3$`Primera Amortización` <- if_else(
-    wday(base_datos_pagosV3$`Primera Amortización`) == 6,
-    base_datos_pagosV3$`Primera Amortización`,
-    base_datos_pagosV3$`Primera Amortización` + days(6 - wday(base_datos_pagosV3$`Primera Amortización`) + ifelse(wday(base_datos_pagosV3$`Primera Amortización`) > 6, 7, 0))
-  )
-  
-  library(openxlsx)
+  base_datos_pagosV3 <- base_datos_pagosV3[1:nrow(base_datos_pagosV3),]
   
   
-  # Parte del nombre del archivo que conoces
-  partial_filename <- paste0(Documents_path, "\\Integration\\DATA\\FINANCIEROS\\", empresa, "\\FORMATS\\", "FlexiCredit - Listado de Descuentos ", empresa)
-  
-  # Encontrar archivos que coincidan con la parte conocida del nombre
-  matching_files <- list.files(path = dirname(partial_filename), pattern = basename(partial_filename))
-  
-  # Mostrar los archivos coincidentes encontrados
-  matching_files
-  
-  file_path <- paste0(Documents_path, "\\Integration\\DATA\\FINANCIEROS\\", empresa, "\\FORMATS\\", matching_files)
-  
-  file_path
-  
-  
-  if (!file.exists(file_path)) {
-    # Create a new workbook
-    wb <- createWorkbook()
+  if(!is.na(base_datos_pagosV3$`Numero de Contrato`[[1]])){
+    length <- length(base_datos_pagosV3) - 2
+    base_datos_pagosV3 <- base_datos_pagosV3[,3:length]
     
-    # Add a new sheet to the newly created workbook
-    addWorksheet(wb, "MySheet")
-  } else {
-    # Load the existing workbook
-    wb <- loadWorkbook(file_path)
+    #
+    base_datos_pagosV3$`Primera Amortización` <- as.Date(base_datos_pagosV3$`Primera Amortización`)
     
-    # Extract the file name without the extension
-    file_name <- tools::file_path_sans_ext(basename(file_path))
     
-    # Replace the date part in the file name with the current system date
-    new_date <- format(Sys.Date(), "%Y-%m-%d")
-    new_file_name <- gsub("\\d{4}-\\d{2}-\\d{2}", new_date, file_name)
+    library(lubridate)
+    Sys.setlocale("LC_TIME", "Spanish")
+    # Get today's date
+    today <- Sys.Date()
     
-    # Generate the new file path
-    new_file_path <- file.path(dirname(file_path), paste0(new_file_name, ".xlsx"))
+    # Calculate the nearest Friday
+    days_to_friday <- ifelse(wday(today) < 6, 6 - wday(today), 13 - wday(today))
+    nearest_friday <- today + days(days_to_friday)
     
-    # Save the workbook with the updated file name
-    saveWorkbook(wb, new_file_path)
+    base_datos_pagosV3$`Primera Amortización` <- ymd(base_datos_pagosV3$`Primera Amortización`)
     
-    # Load the modified workbook
-    wb <- loadWorkbook(new_file_path)
-  }
-  
-  # Rest of your code remains unchanged from here onwards
-  
-  # Starting row and column to write the data
-  start_row <- 6
-  start_col <- 2
-  start_row2 <- start_row + 1
-  
-  # Get dimensions of the existing data
-  existing_data <- readWorkbook(wb, sheet = "MySheet", startRow = start_row)
-  existing_rows <- nrow(existing_data)
-  
-  # Clear existing content from the specified range
-  for (i in start_row2:(start_row2 + existing_rows - 1)) {
-    for (j in start_col:(start_col + ncol(existing_data) - 1)) {
-      writeData(wb, "MySheet", "", startRow = i, startCol = j)
+    base_datos_pagosV3$`Primera Amortización` = nearest_friday
+    #
+    #base_datos_pagosV3$`Primera Amortización` <- if_else(
+    #  wday(base_datos_pagosV3$`Primera Amortización`) == 6,
+    #  base_datos_pagosV3$`Primera Amortización`,
+    #  base_datos_pagosV3$`Primera Amortización` + days(6 - wday(base_datos_pagosV3$`Primera Amortización`) + ifelse(wday(base_datos_pagosV3$`Primera Amortización`) > 6, 7, 0))
+    #)
+    
+    library(openxlsx)
+    
+    
+    # Parte del nombre del archivo que conoces
+    partial_filename <- paste0(Documents_path, "\\Integration\\DATA\\FINANCIEROS\\", empresa, "\\FORMATS\\", "FlexiCredit - Listado de Descuentos ", empresa)
+    
+    # Encontrar archivos que coincidan con la parte conocida del nombre
+    matching_files <- list.files(path = dirname(partial_filename), pattern = basename(partial_filename))
+    
+    # Mostrar los archivos coincidentes encontrados
+    matching_files
+    
+    file_path <- paste0(Documents_path, "\\Integration\\DATA\\FINANCIEROS\\", empresa, "\\FORMATS\\", matching_files)
+    
+    file_path
+    
+    
+    if (!file.exists(file_path)) {
+      # Create a new workbook
+      wb <- createWorkbook()
+      
+      # Add a new sheet to the newly created workbook
+      addWorksheet(wb, "MySheet")
+    } else {
+      # Load the existing workbook
+      wb <- loadWorkbook(file_path)
+      
+      # Extract the file name without the extension
+      file_name <- tools::file_path_sans_ext(basename(file_path))
+      
+      # Replace the date part in the file name with the current system date
+      new_date <- format(Sys.Date(), "%Y-%m-%d")
+      new_file_name <- gsub("\\d{4}-\\d{2}-\\d{2}", new_date, file_name)
+      
+      # Generate the new file path
+      new_file_path <- file.path(dirname(file_path), paste0(new_file_name, ".xlsx"))
+      
+      # Save the workbook with the updated file name
+      saveWorkbook(wb, new_file_path)
+      
+      # Load the modified workbook
+      wb <- loadWorkbook(new_file_path)
     }
-  }
-  
-  # Write data to the first sheet
-  writeData(wb, "MySheet", base_datos_pagosV3, startRow = start_row, startCol = start_col)
-  
-  # Save the workbook to the specified location
-  saveWorkbook(wb, new_file_path, overwrite = TRUE)
-  
-  
-  # Get today's date
-  today <- Sys.Date()
-  
-  if (wday(today) == 2) {  # Check if today is Monday (wday = 2 for Monday)
-    nearest_monday <- today  # Keep today's date as Monday
-  } else {
-    # Calculate the nearest Monday
-    days_to_monday <- ifelse(wday(today) < 2, 2 - wday(today), 9 - wday(today))
-    nearest_monday <- today + days(days_to_monday)
-  }
-  
-  empresas_folder <- empresa_directory
-  destination_folder <- move_directory
-  
-  empresas_files <- list.files(empresas_folder, full.names = TRUE, recursive = FALSE)
-  empresas_files <- empresas_files[file.info(empresas_files)$isdir == FALSE]
-  empresas_files <- empresas_files[order(file.info(empresas_files)$mtime, decreasing = TRUE)]
-  new_file_name <- paste0("FlexiCredit - Listado de Descuentos ", empresa, " ", nearest_monday, ".xlsx")
-  
-  
-  if (length(empresas_files) > 0) {
-    # Get the most recent file (the first one in the sorted list)
-    most_recent_file <- empresas_files[1]
     
-    # Define the destination path for the most recent file
-    destination_path <- file.path(destination_folder, new_file_name)
+    # Rest of your code remains unchanged from here onwards
     
-    # Move the most recent file to the destination folder
-    file.rename(most_recent_file, destination_path)
-    cat("Moved file:", most_recent_file, "\nTo destination:", destination_path, "\n")
-  } else {
-    cat("No files to move in the Downloads folder.\n")
-  }
-  
-  
-  library(RDCOMClient)
-  empresas <- c("Denso", "Mondelez", "Ladrillera", "Muebles Krill", "La Tradicional", "Tatsumi")
-  empleados <- c("Karla De La Rosa", "Juan vazquez", "Ricardo Cazares", "Elizabeth Estrella", "Aurora Idolina", "Alejandra Ramirez") 
-  emails <- list(c("karla.delarosa@na.denso.com"), c("jvazkez_9093@hotmail.com", "oscarop1912950@gmail.com"), c("rcazares@ladrillera.mx", "ybustos@ladrillera.mx", "acastillo@ladrillera.mx"),c("eli_estrella@muebleskrill.com", "krill.rh2@gmail.com"), c("recursosh@tostadasdelicias.com"), c("laura-martinez@tdm.mitsuba-gr.com", "alejandra-rmz@tdm.mitsuba-gr.com"))
-  
-  # Create a list to associate empresas, empleados, and emails
-  company_data <- list()
-  
-  # Loop through each empresa and associate empleados and emails
-  for (i in seq_along(empresas)) {
-    company <- empresas[i]
-    employee <- empleados[i]
-    email <- emails[[i]]
+    # Starting row and column to write the data
+    start_row <- 6
+    start_col <- 2
+    start_row2 <- start_row + 1
     
-    company_data[[company]] <- list(Empleado = employee, Email = email)
-  }
-  
-  # Load the lubridate package
-  library(lubridate)
-  
-  # Get today's date
-  today <- Sys.Date()
-  
-  # Calculate the nearest Friday
-  days_to_friday <- ifelse(wday(today) < 6, 6 - wday(today), 13 - wday(today))
-  nearest_friday <- today + days(days_to_friday)
-  
-  # Print the nearest Friday
-  formatted_friday <- format(nearest_friday, "%A, %d de %B %Y")
-  
-  htmlbody <- paste0(
-    "<html>
+    # Get dimensions of the existing data
+    existing_data <- readWorkbook(wb, sheet = "MySheet", startRow = start_row)
+    existing_rows <- nrow(existing_data)
+    
+    # Clear existing content from the specified range
+    for (i in start_row2:(start_row2 + existing_rows - 1)) {
+      for (j in start_col:(start_col + ncol(existing_data) - 1)) {
+        writeData(wb, "MySheet", "", startRow = i, startCol = j)
+      }
+    }
+    
+    # Write data to the first sheet
+    writeData(wb, "MySheet", base_datos_pagosV3, startRow = start_row, startCol = start_col)
+    
+    # Save the workbook to the specified location
+    saveWorkbook(wb, new_file_path, overwrite = TRUE)
+    
+    
+    # Get today's date
+    today <- Sys.Date()
+    
+    if (wday(today) == 2) {  # Check if today is Monday (wday = 2 for Monday)
+      nearest_monday <- today  # Keep today's date as Monday
+    } else {
+      # Calculate the nearest Monday
+      days_to_monday <- ifelse(wday(today) < 2, 2 - wday(today), 9 - wday(today))
+      nearest_monday <- today + days(days_to_monday)
+    }
+    
+    empresas_folder <- empresa_directory
+    destination_folder <- move_directory
+    
+    empresas_files <- list.files(empresas_folder, full.names = TRUE, recursive = FALSE)
+    empresas_files <- empresas_files[file.info(empresas_files)$isdir == FALSE]
+    empresas_files <- empresas_files[order(file.info(empresas_files)$mtime, decreasing = TRUE)]
+    new_file_name <- paste0("FlexiCredit - Listado de Descuentos ", empresa, " ", today, ".xlsx")
+    
+    
+    if (length(empresas_files) > 0) {
+      # Get the most recent file (the first one in the sorted list)
+      most_recent_file <- empresas_files[1]
+      
+      # Define the destination path for the most recent file
+      destination_path <- file.path(destination_folder, new_file_name)
+      
+      # Move the most recent file to the destination folder
+      file.rename(most_recent_file, destination_path)
+      cat("Moved file:", most_recent_file, "\nTo destination:", destination_path, "\n")
+    } else {
+      cat("No files to move in the Downloads folder.\n")
+    }
+    
+    library(RDCOMClient)
+    empresas <- c("Denso", "Mondelez", "Ladrillera", "Muebles Krill", "La Tradicional", "Tatsumi", "TEST")
+    empleados <- c("Karla De La Rosa", "Juan vazquez", "Ricardo Cazares", "Elizabeth Estrella", "Aurora Idolina", "Alejandra Ramirez", "TEST") 
+    emails <- list(c("karla.delarosa@na.denso.com"), c("jvazkez_9093@hotmail.com", "oscarop1912950@gmail.com"), c("rcazares@ladrillera.mx", "ybustos@ladrillera.mx", "acastillo@ladrillera.mx"),c("eli_estrella@muebleskrill.com", "krill.rh2@gmail.com"), c("recursosh@tostadasdelicias.com"), c("laura-martinez@tdm.mitsuba-gr.com", "alejandra-rmz@tdm.mitsuba-gr.com"), c("finanzas3@flexicredit.mx"))
+    
+    
+    # Create a list to associate empresas, empleados, and emails
+    company_data <- list()
+    
+    # Loop through each empresa and associate empleados and emails
+    for (i in seq_along(empresas)) {
+      company <- empresas[i]
+      employee <- empleados[i]
+      email <- emails[[i]]
+      
+      company_data[[company]] <- list(Empleado = employee, Email = email)
+    }
+    
+    
+    # Load the lubridate package
+    library(lubridate)
+    
+    # Get today's date
+    today <- Sys.Date()
+    
+    # Calculate the nearest Friday
+    days_to_friday <- ifelse(wday(today) < 6, 6 - wday(today), 13 - wday(today))
+    nearest_friday <- today + days(days_to_friday)
+    
+    # Print the nearest Friday
+    formatted_friday <- format(nearest_friday, "%A, %d de %B %Y")
+    
+    htmlbody <- paste0(
+      "<html>
     <head>
       <style>
         body {
@@ -1043,12 +1111,13 @@ business <- function(empresa) {
       </style>
     </head>
     <body>
-      <h1>Listado de Descuentos ", empresa, "</h1> <br>
-      <img src='https://flexicredit.mx/wp-content/uploads/2022/06/Flexicredit-02-02.png' alt='Logo de la empresa' width='100'>
+      <h1>Relacion de Adeudos ", empresa, "</h1> <br>
+      <img src='https://flexicredit.mx/wp-content/uploads/2019/05/0011.png' alt='Logo de la empresa' width='100'>
       <div class='message'>
         <p>Buenos días ", company_data[[empresa]]$Empleado , ",</p>
-        <p>Espero te encuentres muy bien. Te compartimos el listado con los nuevos descuentos a realizar a partir de este <em><strong> ", formatted_friday ,". </strong></em>
-        <br>Adjunto encontraras el archivo con el detalle de la información. Quedamos al pendiente para cualquier duda o aclaración.</p>
+        <p>Espero te encuentres muy bien. Te compartimos el listado con la relacion de adeudos. <em><strong> ", formatted_friday ,". </strong></em>
+        <br>Adjunto encontraras el archivo con el detalle de la información. Las 3 pestañas contienen los adeudos por empleado, el atraso en pagos, y los nuevos creditos liberados para iniciar su descuento el <em><strong> ", formatted_friday ,". </strong></em>. 
+        <br>Quedamos al pendiente para cualquier duda o aclaración.</p>
         <p>Saludos y excelente inicio de semana!</p>
       
      <footer>
@@ -1070,52 +1139,58 @@ business <- function(empresa) {
     </div>
     </body>
   </html>"
-  ) 
-  
-  
-  # Open Outlook
-  Outlook <- COMCreate("Outlook.Application")
-  
-  # Create a new message
-  Email = Outlook$CreateItem(0)
-  
-  # Set the recipient, subject, and body
-  Email[["to"]] = paste(company_data[[empresa]]$Email, collapse = ";") 
-  Email[["cc"]] = ""
-  Email[["bcc"]] = "dir.general@flexicredit.mx;finanzas2@flexicredit.mx"
-  Email[["subject"]] = paste0("Listado de Descuentos ", empresa)
-  Email[["htmlbody"]] = htmlbody
-  
-  # Attach the file
-  Email[["attachments"]]$Add(paste0("C:/Users/SimonSantos/Documents/Integration/DATA/FINANCIEROS/",empresa,"/ENTREGABLE/FlexiCredit - Listado de Descuentos ", empresa, " ", nearest_monday, ".xlsx"))
-  
-  # Send the message
-  trueorfalse <- Email$Send()
-  trueorfalse
-  
-  if (trueorfalse) {
-    move_directory <- paste0(Documents_path, "\\Integration\\DATA\\FINANCIEROS\\", empresa,"\\ENTREGABLE")
-    sent_directory <- paste0(Documents_path, "\\Integration\\DATA\\FINANCIEROS\\", empresa,"\\ENVIADOS")
+    )
     
-    move_files <- list.files(move_directory, full.names = TRUE, recursive = FALSE)
-    move_files <- move_files[file.info(move_files)$isdir == FALSE]
-    move_files <- move_files[order(file.info(move_files)$mtime, decreasing = TRUE)]
-    new_file_name <- paste0("FlexiCredit - Listado de Descuentos ", empresa, " ", nearest_monday, ".xlsx")
     
-    destination_folder <- sent_directory
-    if (length(empresas_files) > 0) {
-      # Get the most recent file (the first one in the sorted list)
-      most_recent_file <- move_files[1]
+    # Open Outlook
+    Outlook <- COMCreate("Outlook.Application")
+    
+    # Create a new message
+    Email = Outlook$CreateItem(0)
+    
+    # Set the recipient, subject, and body
+    Email[["to"]] = paste(company_data[[empresa]]$Email, collapse = ";") 
+    Email[["cc"]] = ""
+    Email[["bcc"]] = "finanzas2@flexicredit.mx"
+    Email[["subject"]] = paste0("Listado de Descuentos ", empresa)
+    Email[["htmlbody"]] = htmlbody
+    
+    Email[["ReadReceiptRequested"]] <- TRUE
+    
+    # Attach the file
+    Email[["attachments"]]$Add(paste0("C:/Users/SimonSantos/Documents/Integration/DATA/FINANCIEROS/",empresa,"/ENTREGABLE/FlexiCredit - Listado de Descuentos ", empresa, " ", today, ".xlsx"))
+    
+    # Send the message
+    trueorfalse <- Email$Send()
+    trueorfalse
+    Sys.setlocale("LC_TIME", "C")
+    
+    if (trueorfalse) {
+      move_directory <- paste0(Documents_path, "\\Integration\\DATA\\FINANCIEROS\\", empresa,"\\ENTREGABLE")
+      sent_directory <- paste0(Documents_path, "\\Integration\\DATA\\FINANCIEROS\\", empresa,"\\ENVIADOS")
       
-      # Define the destination path for the most recent file
-      destination_path <- file.path(destination_folder, new_file_name)
+      move_files <- list.files(move_directory, full.names = TRUE, recursive = FALSE)
+      move_files <- move_files[file.info(move_files)$isdir == FALSE]
+      move_files <- move_files[order(file.info(move_files)$mtime, decreasing = TRUE)]
+      new_file_name <- paste0("FlexiCredit - Listado de Descuentos ", empresa, " ", today, ".xlsx")
       
-      # Move the most recent file to the destination folder
-      file.rename(most_recent_file, destination_path)
-      cat("Moved file:", most_recent_file, "\nTo destination:", destination_path, "\n")
-    } else {
-      cat("No files to move in the Downloads folder.\n")
+      destination_folder <- sent_directory
+      if (length(empresas_files) > 0) {
+        # Get the most recent file (the first one in the sorted list)
+        most_recent_file <- move_files[1]
+        
+        # Define the destination path for the most recent file
+        destination_path <- file.path(destination_folder, new_file_name)
+        
+        # Move the most recent file to the destination folder
+        file.rename(most_recent_file, destination_path)
+        cat("Moved file:", most_recent_file, "\nTo destination:", destination_path, "\n")
+      } else {
+        cat("No files to move in the Downloads folder.\n")
+      }
     }
+  } else {
+    cat("No existen creditos nuevos asignados en", empresa)
+    cat("\n") 
   }
-  
 }
